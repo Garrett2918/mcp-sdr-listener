@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDR Listener</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a receiver front panel (tuner, meter, transport) above two working columns: signals and transcripts. */
+:root {
+    --bg: #eef0ee; --panel: #ffffff; --line: #d5dad6; --fg: #17201b; --mute: #5c6a62;
+    --accent: #0f7a5c; --accent-ink: #ffffff; --lcd: #0e1a14; --lcd-fg: #7cf2b8; --lcd-dim: #2f5a46;
+    --warn: #a86400; --bad: #b3261e;
+    --mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+    --sans: 'IBM Plex Sans', system-ui, 'Segoe UI', sans-serif;
+    color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+    :root { --bg: #0d110f; --panel: #151b18; --line: #26302b; --fg: #e2e9e5; --mute: #8b9a92;
+        --accent: #3ccf95; --accent-ink: #062016; --lcd: #07100b; --lcd-fg: #7cf2b8; --lcd-dim: #234536;
+        --warn: #e6a23c; --bad: #ff6b5e; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); padding-inline: 16px; padding-block: 20px 40px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
+h1 { font: 600 18px/1.2 var(--sans); margin: 0; letter-spacing: .01em; }
+.host { color: var(--mute); font: 13px var(--mono); }
+.settings-link { margin-left: auto; color: var(--accent); font-size: 13px; text-decoration: none; }
+.head .sub a { color: var(--accent); }
+.chip { font: 500 12px var(--mono); padding: 3px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--mute); }
+.chip[data-s="live"] { color: var(--accent); border-color: var(--accent); }
+.chip[data-s="refused"], .chip[data-s="reconnecting"] { color: var(--bad); border-color: var(--bad); }
+.chip[data-s="connecting"] { color: var(--warn); border-color: var(--warn); }
+.notice { font-size: 13px; color: var(--bad); margin: -8px 0 0; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.tuner { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 24px; align-items: center; }
+.lcd { background: var(--lcd); border-radius: 8px; padding: 14px 18px; display: grid; gap: 6px; }
+.freq-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+#freq { all: unset; font: 500 clamp(34px, 7vw, 56px)/1 var(--mono); color: var(--lcd-fg); width: 8.2ch; font-variant-numeric: tabular-nums; cursor: ns-resize; }
+#freq:focus { cursor: text; outline: 1px dashed var(--lcd-dim); outline-offset: 4px; }
+.unit { font: 500 16px var(--mono); color: var(--lcd-fg); opacity: .7; }
+.lcd-meta { font: 13px var(--mono); color: var(--lcd-fg); opacity: .75; display: flex; gap: 16px; flex-wrap: wrap; }
+.meter { position: relative; height: 10px; background: var(--lcd-dim); border-radius: 2px; overflow: hidden; }
+.meter i { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, var(--lcd-fg), #e6f26b 70%, #ff8a5c); transition: width .25s; }
+.meter-scale { display: flex; justify-content: space-between; font: 10px var(--mono); color: var(--lcd-fg); opacity: .5; }
+
+.transport { display: grid; gap: 10px; justify-items: stretch; min-width: 180px; }
+button { font: 500 13px var(--sans); border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .5; cursor: progress; }
+.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; padding: 11px 16px; font-size: 15px; }
+.vol { display: flex; align-items: center; gap: 8px; color: var(--mute); font-size: 12px; }
+.vol input { flex: 1; accent-color: var(--accent); }
+
+.controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; grid-column: 1 / -1; }
+.group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.label { font: 500 11px var(--sans); text-transform: uppercase; letter-spacing: .08em; color: var(--mute); margin-right: 4px; }
+.seg button { font-family: var(--mono); padding: 5px 9px; }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--panel); border-color: var(--fg); }
+
+.cols { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; align-items: start; }
+@media (max-width: 860px) { .cols, .tuner { grid-template-columns: minmax(0, 1fr); } }
+h2 { font: 600 13px var(--sans); text-transform: uppercase; letter-spacing: .08em; margin: 0; }
+.head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.head .sub { color: var(--mute); font-size: 12px; margin-right: auto; }
+select { font: 13px var(--sans); padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+th { text-align: left; font: 500 11px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--mute); padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+tr.current td { color: var(--accent); font-weight: 600; }
+.snr { display: inline-block; min-width: 3.2em; }
+.bar { display: inline-block; height: 6px; background: var(--accent); border-radius: 1px; vertical-align: middle; opacity: .75; }
+.empty { color: var(--mute); padding: 18px 4px; font-size: 13px; }
+
+.log { display: grid; gap: 10px; max-height: 640px; overflow-y: auto; }
+.entry { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; }
+.entry-meta { display: flex; gap: 12px; flex-wrap: wrap; font: 12px var(--mono); color: var(--mute); align-items: center; }
+.entry-meta b { color: var(--fg); font-weight: 600; }
+.entry-meta a { color: var(--accent); margin-left: auto; text-decoration: none; }
+.entry p { margin: 0; max-width: 72ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+.entry p.blank { color: var(--mute); font-style: italic; }
+.entry audio { width: 100%; height: 32px; }
+.busy { font: 12px var(--mono); color: var(--warn); }
+.hint { color: var(--mute); font-size: 12px; margin: 10px 0 0; }
+code { font-family: var(--mono); font-size: .92em; }
+.live { display: grid; gap: 8px; margin-bottom: 12px; }
+.live-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+#live-toggle[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.captions { background: var(--lcd); color: var(--lcd-fg); border-radius: 8px; padding: 10px 12px; max-height: 220px; overflow-y: auto; display: grid; gap: 6px; font-size: 14px; }
+.captions p { margin: 0; max-width: 72ch; overflow-wrap: anywhere; }
+.captions .en, .entry .en { opacity: .75; font-style: italic; }
+.captions time { font: 11px var(--mono); opacity: .6; margin-right: 8px; }
+.wf-wrap { background: var(--lcd); border-radius: 6px; overflow: hidden; }
+.wf-wrap canvas { display: block; width: 100%; image-rendering: pixelated; }
+#wf { height: 220px; cursor: crosshair; }
+#wf-axis { height: 22px; }
+@media (prefers-reduced-motion: reduce) { .meter i { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <h1>SDR Listener</h1>
+        <span class="host" id="host"></span>
+        <a class="settings-link" href="/settings">Settings</a>
+        <span class="chip" id="chip" data-s="idle">idle</span>
+    </header>
+    <p class="notice" id="notice" hidden></p>
+
+    <section class="panel tuner" aria-label="Tuner">
+        <div class="lcd">
+            <div class="freq-row">
+                <input id="freq" inputmode="decimal" aria-label="Frequency in kHz" title="Type a frequency in kHz and press Enter. Scroll to step." value="3873.00">
+                <span class="unit">kHz</span>
+            </div>
+            <div class="lcd-meta">
+                <span id="mode-read">AM</span>
+                <span id="bw-read">BW 10.0 kHz</span>
+                <span id="snr-read">S/N --</span>
+                <span id="buf-read">buffer 0 s</span>
+            </div>
+            <div class="meter" aria-hidden="true"><i id="meter"></i></div>
+            <div class="meter-scale" aria-hidden="true"><span>0</span><span>10</span><span>20</span><span>30</span><span>40 dB</span></div>
+        </div>
+        <div class="transport">
+            <button class="primary" id="play">Listen</button>
+            <label class="vol" for="vol">Vol <input id="vol" type="range" min="0" max="150" value="80"></label>
+        </div>
+        <div class="controls">
+            <div class="group" role="group" aria-label="Step">
+                <span class="label">Step</span>
+                <button data-step="-10000">−10k</button><button data-step="-1000">−1k</button><button data-step="-100">−100</button>
+                <button data-step="100">+100</button><button data-step="1000">+1k</button><button data-step="10000">+10k</button>
+            </div>
+            <div class="group seg" role="group" aria-label="Mode" id="modes">
+                <span class="label">Mode</span>
+            </div>
+            <div class="group" role="group" aria-label="Bands" id="bands">
+                <span class="label">Band</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="panel wf-panel" aria-label="Waterfall">
+        <div class="head">
+            <h2>Waterfall</h2>
+            <span class="sub" id="wf-sub">Click a signal to tune to it</span>
+            <label class="label" for="wf-span">Span</label>
+            <select id="wf-span">
+                <option value="10000">10 kHz</option>
+                <option value="25000">25 kHz</option>
+                <option value="50000">50 kHz</option>
+                <option value="100000" selected>100 kHz</option>
+                <option value="200000">200 kHz</option>
+                <option value="400000">400 kHz</option>
+                <option value="1000000">1 MHz</option>
+            </select>
+            <button id="wf-toggle">Pause</button>
+        </div>
+        <div class="wf-wrap">
+            <canvas id="wf-axis" height="22"></canvas>
+            <canvas id="wf" height="220"></canvas>
+        </div>
+    </section>
+
+    <div class="cols">
+        <section class="panel" aria-label="Active signals">
+            <div class="head">
+                <h2>Active voice signals</h2>
+                <span class="sub" id="active-sub">from the receiver's voice detector</span>
+                <select id="band-filter" aria-label="Band filter"><option value="">All bands</option></select>
+                <button id="refresh">Refresh</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Band</th><th>kHz</th><th>Mode</th><th>S/N dB</th><th>Conf</th></tr></thead>
+                    <tbody id="signals"></tbody>
+                </table>
+            </div>
+            <div class="empty" id="signals-empty">Loading signals…</div>
+        </section>
+
+        <section class="panel" aria-label="Transcripts">
+            <div class="head">
+                <h2>Transcripts</h2>
+                <span class="sub">Model chosen in <a href="/settings">Settings</a></span>
+                <button data-tx="past" data-sec="30">Last 30 s</button>
+                <button data-tx="past" data-sec="60">Last 60 s</button>
+                <button data-tx="next" data-sec="30">Next 30 s</button>
+            </div>
+            <div class="live">
+                <div class="live-head">
+                    <button id="live-toggle" aria-pressed="false">Start live captions</button>
+                    <span class="sub" id="live-state">15 s chunks · stops after 10 min</span>
+                </div>
+                <div class="captions" id="captions" hidden></div>
+            </div>
+            <div class="busy" id="tx-busy" hidden></div>
+            <div class="log" id="log"></div>
+            <div class="empty" id="log-empty" hidden>No transcripts yet. Listen to a signal, then press <b>Last 30 s</b>. Claude can do the same through the <code>sdr</code> tools.</div>
+            <p class="hint">Ask Claude things like “find active AM signals on 75 m and tell me what they're discussing”.</p>
+        </section>
+    </div>
+</div>
+<script src="/app.js" type="module"></script>
+</body>
+</html>

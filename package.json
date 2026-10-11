@@ -1,0 +1,19 @@
+{
+  "name": "sdr-listener",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "ws": "^8.22.0",
+    "zod": "^4.6.6"
+  },
+  "description": "Listen to, tune, scan and transcribe an UberSDR web receiver, with an MCP server for Claude.",
+  "license": "GPL-3.0-only",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
