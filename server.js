@@ -705,7 +705,7 @@ async function receiverJson(p) {
 // Call sign lookup through the receiver: the prefix table (country, zones) and,
 // when available, the license record the receiver fetches for its listeners.
 // Only what helps identify a station is passed on; home coordinates, county,
-// phone area code, birth year and photos are dropped. Cached for a day.
+// phone area code and photos are dropped. Cached for a day.
 const callCache = new Map();
 
 // The record's "QSL manager" field holds either a manager's call sign or free
@@ -751,6 +751,7 @@ async function callsignLookup(call) {
                 licenseClass: r.class || undefined,
                 expires: r.expdate || undefined,
                 timezone: r.tz_iana || undefined,
+                born: r.born ? Number(r.born) : undefined,
                 qsl: qslRoutes(r),
             };
         } else if (r?.error) {

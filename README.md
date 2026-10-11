@@ -37,9 +37,9 @@ Open http://localhost:8737, press **Listen**, and add an API key under
   translate to English. Each transcript keeps its audio clip.
 - **Morse decoding** of buffered or upcoming audio.
 - **Call sign lookup** through the receiver: country, zones and local time
-  from the prefix, plus the license holder's name, town, grid square and QSL
-  routes. The app drops home coordinates, county, phone area code and birth
-  year from the record and caches answers for a day.
+  from the prefix, plus the license holder's name, birth year when listed,
+  town, grid square and QSL routes. The app drops home coordinates, county
+  and phone area code from the record and caches answers for a day.
 
 ## Settings
 
@@ -77,7 +77,7 @@ The MCP server starts `server.js` itself if it isn't running. Tools:
 | `sdr_live` | Start, read and stop live captions |
 | `sdr_decode_cw` | Morse decoding of buffered or upcoming audio |
 | `sdr_spots` | FT8/FT4/WSPR stations this receiver decoded, or the worldwide DX cluster |
-| `sdr_callsign` | Look up a call sign: entity, zones, name, town, grid, QSL routes |
+| `sdr_callsign` | Look up a call sign: entity, zones, name, birth year, town, grid, QSL routes |
 | `sdr_conditions`, `sdr_dxpeditions`, `sdr_bookmarks` | Band conditions, active DX-peditions, operator presets |
 
 Morse from the command line: `node cw-decode.js 30` (buffered audio) or

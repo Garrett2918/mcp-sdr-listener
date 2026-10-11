@@ -253,6 +253,7 @@ $('call-form').addEventListener('submit', async (e) => {
         const rows = [
             ['Call', r.call, 'big'],
             ['Name', L.name],
+            ['Born', L.born],
             ['From', where],
             ['Operating in', L.operatingFrom],
             ['Entity', P.entity && `${P.entity} (${P.continent}) · CQ ${P.cqZone} · ITU ${P.ituZone}`],
