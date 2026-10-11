@@ -7,16 +7,17 @@ const IDLE_MS = 15 * 60 * 1000;
 const KEEP = { dx: 1500, digital: 6000 };
 
 export class SpotFeed {
-    constructor({ host, radio }) {
+    constructor({ host, radio, openSocket = (url) => new WebSocket(url) }) {
         this.host = host;
         this.radio = radio;
+        this.openSocket = openSocket;
         this.ws = null;
         this.opening = null;
         this.lastUse = 0;
         this.spots = { dx: [], digital: [] };
         setInterval(() => {
             if (this.ws && Date.now() - this.lastUse > IDLE_MS) { try { this.ws.close(1000); } catch { /* closed */ } this.ws = null; }
-        }, 60000).unref();
+        }, 60000).unref?.();
     }
 
     async ensure() {
@@ -28,7 +29,7 @@ export class SpotFeed {
 
     async _open() {
         await this.radio.register();
-        const ws = new WebSocket(`wss://${this.host}/ws/dxcluster?user_session_id=${this.radio.sessionId}`);
+        const ws = this.openSocket(`wss://${this.host}/ws/dxcluster?user_session_id=${this.radio.sessionId}`);
         this.ws = ws;
         ws.onmessage = (ev) => {
             let m; try { m = JSON.parse(ev.data); } catch { return; }

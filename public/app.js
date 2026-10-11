@@ -6,13 +6,16 @@ const BANDS = [
     ['17m', 18140000, 'usb'], ['15m', 21300000, 'usb'], ['12m', 24960000, 'usb'], ['10m', 28400000, 'usb'],
 ];
 
+// wss:// when the page itself came over HTTPS (the Cloudflare deployment).
+const WS_BASE = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
+
 let state = { frequency: 3873000, mode: 'am', bandwidthLow: -5000, bandwidthHigh: 5000 };
 let ws = null, ctx = null, node = null, listening = false, gain = 0.8;
 
 // ---------- server stream ----------
 
 function connect() {
-    ws = new WebSocket(`ws://${location.host}/stream`);
+    ws = new WebSocket(`${WS_BASE}/stream`);
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => { if (listening) ws.send(JSON.stringify({ type: 'listen', on: true })); };
     ws.onmessage = (e) => {
@@ -327,7 +330,7 @@ const axis = $('wf-axis'), ax = axis.getContext('2d');
 let wfView = { startHz: 0, hzPerCol: 0 }, wfFloor = null, wfPaused = false, wfSock = null, wfRow = 0;
 
 function wfConnect() {
-    wfSock = new WebSocket(`ws://${location.host}/spectrum`);
+    wfSock = new WebSocket(`${WS_BASE}/spectrum`);
     wfSock.binaryType = 'arraybuffer';
     wfSock.onopen = () => wfSock.send(JSON.stringify({ type: 'span', spanHz: Number($('wf-span').value) }));
     wfSock.onmessage = (e) => {

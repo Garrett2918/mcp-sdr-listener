@@ -10,10 +10,11 @@ import zlib from 'node:zlib';
 const LINGER_MS = 20000;
 
 export class SpectrumFeed extends EventEmitter {
-    constructor({ host, radio }) {
+    constructor({ host, radio, openSocket = (url) => new WebSocket(url) }) {
         super();
         this.host = host;
         this.radio = radio;
+        this.openSocket = openSocket;
         this.ws = null;
         this.connecting = null;
         this.viewers = 0;
@@ -40,7 +41,7 @@ export class SpectrumFeed extends EventEmitter {
             user_session_id: this.radio.sessionId, mode: 'binary8', version: '1',
             frequency: String(Math.round(this.view.frequency)), bin_bandwidth: String(this.view.binBandwidth),
         });
-        const ws = new WebSocket(`wss://${this.host}/ws/user-spectrum?${q}`);
+        const ws = this.openSocket(`wss://${this.host}/ws/user-spectrum?${q}`);
         ws.binaryType = 'arraybuffer';
         this.ws = ws;
         this.raw = null;
