@@ -4,7 +4,7 @@
 #   cp deploy/sdr-listener.service /etc/systemd/system/
 #   systemctl daemon-reload && systemctl enable --now sdr-listener
 # It listens on 127.0.0.1:8737 only; expose it with a reverse proxy or
-# `tailscale funnel --bg --https=8443 http://127.0.0.1:8737`.
+# deploy/Caddyfile (Caddy with an automatic HTTPS certificate).
 
 [Unit]
 Description=SDR Listener (UberSDR bridge and MCP server)

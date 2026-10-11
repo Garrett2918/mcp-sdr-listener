@@ -1,0 +1,11 @@
+# Public HTTPS for SDR Listener with an automatic certificate.
+# Copy to /etc/caddy/Caddyfile, replace the placeholders, and set PUBLIC_URL
+# in .env to the same https:// name.
+# default_bind keeps Caddy off addresses where something else holds :443 (e.g. Tailscale).
+{
+	default_bind SERVER_IP
+}
+
+sdr.example.com {
+	reverse_proxy 127.0.0.1:8737
+}
