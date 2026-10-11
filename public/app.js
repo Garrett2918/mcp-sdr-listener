@@ -236,6 +236,44 @@ for (const b of document.querySelectorAll('[data-tx]')) {
     };
 }
 
+// ---------- call sign lookup ----------
+
+$('call-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const call = $('call-input').value.trim();
+    if (!call) return;
+    const out = $('call-result'), msg = $('call-msg');
+    out.hidden = true; msg.hidden = false; msg.textContent = `Looking up ${call.toUpperCase()}…`;
+    try {
+        const res = await fetch(`/api/callsign?call=${encodeURIComponent(call)}`);
+        const r = await res.json();
+        if (!res.ok) throw new Error(r.error);
+        const L = r.license || {}, P = r.prefix || {};
+        const where = [L.town, L.state, L.country].filter(Boolean).join(', ');
+        const rows = [
+            ['Call', r.call, 'big'],
+            ['Name', L.name],
+            ['From', where],
+            ['Operating in', L.operatingFrom],
+            ['Entity', P.entity && `${P.entity} (${P.continent}) · CQ ${P.cqZone} · ITU ${P.ituZone}`],
+            ['Grid', L.grid],
+            ['Local time', (L.timezone || P.timezone) && new Date().toLocaleTimeString([], { timeZone: L.timezone || P.timezone, hour: '2-digit', minute: '2-digit' }) + ` (${L.timezone || P.timezone})`],
+            ['License', [L.licenseClass && `Class ${L.licenseClass}`, L.expires && `expires ${L.expires}`].filter(Boolean).join(', ')],
+            ['QSL', L.qsl],
+        ].filter(([, v]) => v);
+        out.replaceChildren(...rows.flatMap(([k, v, cls]) => {
+            const dt = document.createElement('dt'); dt.textContent = k;
+            const dd = document.createElement('dd'); dd.textContent = v; if (cls) dd.className = cls;
+            return [dt, dd];
+        }));
+        out.hidden = false;
+        msg.hidden = !r.licenseNote;
+        msg.textContent = r.licenseNote ? `License record: ${r.licenseNote}` : '';
+    } catch (err) {
+        msg.textContent = err.message;
+    }
+});
+
 // ---------- live captions ----------
 
 let liveOn = false;

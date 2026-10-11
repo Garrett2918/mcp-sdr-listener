@@ -164,6 +164,11 @@ server.registerTool('sdr_spots', {
     return api(`/api/spots?${q}`);
 }));
 
+server.registerTool('sdr_callsign', {
+    description: 'Look up an amateur radio call sign through the receiver: country, continent, zones and time zone from the prefix, plus (when available) the license holder\'s name, town, grid square, license class and QSL routes. Use it to identify stations heard in transcripts, Morse or spots. Call signs heard on air are often garbled by transcription, so check the result fits what was said.',
+    inputSchema: { callsign: z.string().describe('e.g. "W1FM" or "5W0AF"') },
+}, wrap(async (a) => api(`/api/callsign?call=${encodeURIComponent(a.callsign)}`)));
+
 server.registerTool('sdr_conditions', {
     description: 'Space weather and HF band conditions (solar flux, K/A index, per-band day/night ratings, forecast). Use to explain why a band is quiet or to suggest where to listen.',
     inputSchema: {},

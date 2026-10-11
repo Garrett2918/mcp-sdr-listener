@@ -36,6 +36,10 @@ Open http://localhost:8737, press **Listen**, and add an API key under
   captions in 15-second chunks. Gemini models also name the language and
   translate to English. Each transcript keeps its audio clip.
 - **Morse decoding** of buffered or upcoming audio.
+- **Call sign lookup** through the receiver: country, zones and local time
+  from the prefix, plus the license holder's name, town, grid square and QSL
+  routes. The app drops home coordinates, county, phone area code and birth
+  year from the record and caches answers for a day.
 
 ## Settings
 
@@ -73,6 +77,7 @@ The MCP server starts `server.js` itself if it isn't running. Tools:
 | `sdr_live` | Start, read and stop live captions |
 | `sdr_decode_cw` | Morse decoding of buffered or upcoming audio |
 | `sdr_spots` | FT8/FT4/WSPR stations this receiver decoded, or the worldwide DX cluster |
+| `sdr_callsign` | Look up a call sign: entity, zones, name, town, grid, QSL routes |
 | `sdr_conditions`, `sdr_dxpeditions`, `sdr_bookmarks` | Band conditions, active DX-peditions, operator presets |
 
 Morse from the command line: `node cw-decode.js 30` (buffered audio) or
@@ -133,6 +138,9 @@ them if one fails.
   audio since the last retune.
 - **Morse:** tune in `cwu`, then `sdr_decode_cw`. Its default `when: "past"`
   catches a transmission that just ended.
+- **Identify stations:** pass call signs from transcripts, Morse or spots to
+  `sdr_callsign`. Transcription often garbles call signs, so check the result
+  fits what you heard.
 - **Context:** `sdr_conditions` explains a dead band. `sdr_spots` shows which
   regions the receiver hears (`kind: "digital"`) or what hams are posting
   (`kind: "dx"`).

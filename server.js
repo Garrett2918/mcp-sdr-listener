@@ -702,6 +702,69 @@ async function receiverJson(p) {
     return res.json();
 }
 
+// Call sign lookup through the receiver: the prefix table (country, zones) and,
+// when available, the license record the receiver fetches for its listeners.
+// Only what helps identify a station is passed on; home coordinates, county,
+// phone area code, birth year and photos are dropped. Cached for a day.
+const callCache = new Map();
+
+// The record's "QSL manager" field holds either a manager's call sign or free
+// text listing methods; the flags add methods it may not mention.
+function qslRoutes(r) {
+    const parts = [];
+    const mgr = String(r.qslmgr || '').trim();
+    if (/^[A-Z0-9/]{3,15}$/i.test(mgr) && /\d/.test(mgr)) parts.push(`via ${mgr.toUpperCase()}`);
+    else if (mgr) parts.push(mgr);
+    const text = mgr.toUpperCase();
+    if (r.lotw === '1' && !text.includes('LOTW')) parts.push('LoTW');
+    if (r.eqsl === '1' && !text.includes('EQSL')) parts.push('eQSL');
+    if (r.mqsl === '1' && !text.includes('DIRECT')) parts.push('direct mail');
+    return parts.join(', ') || undefined;
+}
+async function callsignLookup(call) {
+    call = String(call || '').trim().toUpperCase();
+    if (!/^[A-Z0-9/]{3,15}$/.test(call) || !/\d/.test(call)) throw new Error('That does not look like a call sign.');
+    const hit = callCache.get(call);
+    if (hit && Date.now() - hit.at < 86400000) return hit.data;
+
+    const out = { call };
+    try {
+        const p = await receiverJson(`/api/cty/lookup?callsign=${encodeURIComponent(call)}`);
+        if (p.success && p.data) {
+            const d = p.data;
+            out.prefix = { entity: d.country, continent: d.continent, cqZone: d.cq_zone, ituZone: d.itu_zone, timezone: d.timezone, utcOffset: d.time_offset };
+        }
+    } catch { /* prefix table unavailable */ }
+    try {
+        // The receiver only answers for a session with its audio connected.
+        radio.touch();
+        for (let t = 0; t < 40 && radio.status !== 'live'; t++) await new Promise((r) => setTimeout(r, 250));
+        const r = await receiverJson(`/api/lookup?callsign=${encodeURIComponent(call)}&uuid=${radio.sessionId}`);
+        if (r && !r.error && r.call) {
+            out.license = {
+                name: r.name_fmt || [r.fname, r.name].filter(Boolean).join(' ') || undefined,
+                town: r.addr2 || undefined,
+                state: r.state || undefined,
+                country: r.country || undefined,
+                operatingFrom: r.land && r.land !== r.country ? r.land : undefined,
+                grid: r.grid || undefined,
+                licenseClass: r.class || undefined,
+                expires: r.expdate || undefined,
+                timezone: r.tz_iana || undefined,
+                qsl: qslRoutes(r),
+            };
+        } else if (r?.error) {
+            out.licenseNote = r.error;
+        }
+    } catch (e) {
+        out.licenseNote = `Full lookup unavailable: ${e.message}`;
+    }
+    if (!out.prefix && !out.license) throw new Error(`Nothing found for ${call}.`);
+    // Keep only complete answers, so a temporary failure is retried next time.
+    if (out.license) callCache.set(call, { at: Date.now(), data: out });
+    return out;
+}
+
 async function conditions() {
     const w = await receiverJson('/api/spaceweather');
     const { solar_flux, k_index, k_index_status, a_index, propagation_quality, band_conditions_day, band_conditions_night, forecast } = w;
@@ -802,6 +865,7 @@ const server = http.createServer(async (req, res) => {
             }));
         }
         if (url.pathname === '/api/conditions') return send(res, 200, await conditions());
+        if (url.pathname === '/api/callsign') return send(res, 200, await callsignLookup(url.searchParams.get('call')));
         if (url.pathname === '/api/dxpeditions') return send(res, 200, await dxpeditions({ activeOnly: url.searchParams.get('all') !== '1' }));
         if (url.pathname === '/api/bookmarks') return send(res, 200, await receiverJson('/api/bookmarks'));
         const file = url.pathname.match(/^\/api\/(clips|waterfalls)\/([\w-]+\.(wav|png))$/);

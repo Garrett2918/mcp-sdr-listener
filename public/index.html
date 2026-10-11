@@ -99,6 +99,13 @@ code { font-family: var(--mono); font-size: .92em; }
 .captions p { margin: 0; max-width: 72ch; overflow-wrap: anywhere; }
 .captions .en, .entry .en { opacity: .75; font-style: italic; }
 .captions time { font: 11px var(--mono); opacity: .6; margin-right: 8px; }
+.stack { display: grid; gap: 16px; min-width: 0; align-content: start; }
+.call-form { display: flex; gap: 8px; }
+.call-form input { flex: 1; min-width: 0; font: 14px var(--mono); text-transform: uppercase; padding: 7px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); }
+.call-result { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 12px 0 0; font-size: 13px; }
+.call-result dt { color: var(--mute); font: 500 11px var(--sans); text-transform: uppercase; letter-spacing: .06em; padding-top: 2px; }
+.call-result dd { margin: 0; overflow-wrap: anywhere; }
+.call-result dd.big { font: 600 16px var(--mono); }
 .wf-wrap { background: var(--lcd); border-radius: 6px; overflow: hidden; }
 .wf-wrap canvas { display: block; width: 100%; image-rendering: pixelated; }
 #wf { height: 220px; cursor: crosshair; }
@@ -173,6 +180,7 @@ code { font-family: var(--mono); font-size: .92em; }
     </section>
 
     <div class="cols">
+        <div class="stack">
         <section class="panel" aria-label="Active signals">
             <div class="head">
                 <h2>Active voice signals</h2>
@@ -188,6 +196,17 @@ code { font-family: var(--mono); font-size: .92em; }
             </div>
             <div class="empty" id="signals-empty">Loading signals…</div>
         </section>
+
+        <section class="panel" aria-label="Call sign lookup">
+            <div class="head"><h2>Call sign lookup</h2><span class="sub">via the receiver</span></div>
+            <form id="call-form" class="call-form">
+                <input id="call-input" aria-label="Call sign" placeholder="e.g. W1FM" autocomplete="off" spellcheck="false">
+                <button type="submit">Look up</button>
+            </form>
+            <dl class="call-result" id="call-result" hidden></dl>
+            <p class="empty" id="call-msg" hidden></p>
+        </section>
+        </div>
 
         <section class="panel" aria-label="Transcripts">
             <div class="head">
