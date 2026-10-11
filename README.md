@@ -90,8 +90,8 @@ them if one fails.
 2. Clone and install:
 
    ```sh
-   git clone https://github.com/Garrett2918/sdr-listener.git
-   cd sdr-listener
+   git clone https://github.com/Garrett2918/mcp-sdr-listener.git
+   cd mcp-sdr-listener
    npm install
    ```
 
@@ -103,15 +103,15 @@ them if one fails.
 
    ```sh
    # Claude Code
-   claude mcp add --scope user sdr -- node "/absolute/path/to/sdr-listener/mcp.js"
+   claude mcp add --scope user sdr -- node "/absolute/path/to/mcp-sdr-listener/mcp.js"
    # Codex
-   codex mcp add sdr -- node "/absolute/path/to/sdr-listener/mcp.js"
+   codex mcp add sdr -- node "/absolute/path/to/mcp-sdr-listener/mcp.js"
    ```
 
    Other MCP clients take this config:
 
    ```json
-   { "mcpServers": { "sdr": { "command": "node", "args": ["/absolute/path/to/sdr-listener/mcp.js"] } } }
+   { "mcpServers": { "sdr": { "command": "node", "args": ["/absolute/path/to/mcp-sdr-listener/mcp.js"] } } }
    ```
 
 5. Tell the user to restart the agent session to load the tools. Afterwards,
