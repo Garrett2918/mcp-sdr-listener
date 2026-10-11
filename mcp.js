@@ -77,7 +77,7 @@ server.registerTool('sdr_active_signals', {
 }));
 
 server.registerTool('sdr_transcribe', {
-    description: 'Transcribe audio on the current tuning (Gemini 3.8 Flash, falling back to Whisper large-v3). Returns the language and, for non-English speech, an English translation. when="past" uses audio already buffered since the last retune (falls back to recording if there is too little); when="next" records the next N seconds first. After a fresh sdr_tune use "next". Transcripts of noisy HF audio are often partial and may contain invented filler on pure noise, so check S/N. Saved to the page\'s transcript log.',
+    description: 'Transcribe audio on the current tuning with the model chosen on the Settings page (default Gemini 3.8 Flash, falling back to Whisper large-v3). Gemini also returns the language and, for non-English speech, an English translation. when="past" uses audio already buffered since the last retune (falls back to recording if there is too little); when="next" records the next N seconds first. After a fresh sdr_tune use "next". Transcripts of noisy HF audio are often partial and may contain invented filler on pure noise, so check S/N. Saved to the page\'s transcript log.',
     inputSchema: {
         seconds: z.number().min(5).max(120).optional().describe('Default 30'),
         when: z.enum(['past', 'next']).optional().describe('Default past'),
