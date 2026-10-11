@@ -1,11 +1,13 @@
 # SDR Listener
 
-Listen to and tune an [UberSDR](https://github.com/madpsy/ka9q_ubersdr) web
-receiver (by default K3FEF in Milford, PA) from a local page. Watch a live
-waterfall, find active signals, decode Morse, and transcribe and translate
-speech with Gemini or Whisper. Claude gets the same controls through an MCP
-server, so you can ask it things like "find shortwave broadcasters on 31 m and
-tell me what they're saying".
+Listen to and tune a [UberSDR](https://github.com/madpsy/ka9q_ubersdr) web
+receiver from a page on your own computer. The default receiver is K3FEF in
+Milford, PA. You can watch a live waterfall, find active signals, decode Morse,
+and transcribe or translate speech with Gemini or Whisper.
+
+Claude gets the same controls through an MCP server. Ask it to "find shortwave
+broadcasters on 31 m and tell me what they're saying" and it tunes, listens and
+reports back.
 
 ## Requirements
 
@@ -45,11 +47,12 @@ fallback transcription model:
 | Surplus Intelligence | Gemini 3.8 Flash, Whisper large-v3 (Venice) |
 | OpenRouter | Gemini 3.8 Flash, Whisper large-v3, Whisper large-v3 turbo |
 
-Keys are stored in `.env` (see `.env.example`), never in the repository. Model
-choices are stored in `data/settings.json`. Optional `.env` overrides:
-`SDR_HOST` (another UberSDR receiver) and `PORT`.
+The app saves keys to `.env` (see `.env.example`) and model choices to
+`data/settings.json`. Git ignores both. Set `SDR_HOST` in `.env` to use a
+different UberSDR receiver, or `PORT` to move the page off 8737.
 
-The API only accepts requests from this computer's own page and tools.
+The API answers requests from your own page and tools and refuses requests
+from other websites.
 
 ## Connect Claude
 
@@ -77,15 +80,16 @@ Morse from the command line: `node cw-decode.js 30` (buffered audio) or
 
 ## Notes
 
-- Public receivers are run by volunteers. This app holds one session, drops it
-  after 5 minutes with nobody listening and no tool calls, and finds signals
-  from the spectrum rather than by rapid retuning.
-- Receivers limit users per IP (K3FEF allows 2). A shared VPN exit can use
-  those up; the page then shows the receiver's refusal and retries.
+- Volunteers run public receivers. The app holds one session and drops it after
+  5 minutes with nobody listening and no tool calls. It finds signals by reading
+  the spectrum, so it doesn't hammer the receiver with retunes.
+- Receivers limit users per IP, and K3FEF allows 2. Other people on a shared
+  VPN exit can take those slots. The page shows the receiver's refusal and
+  keeps retrying.
 - If the receiver ends the session, the app starts a new one.
-- The live waterfall and Claude's snapshots share one spectrum view, so a
-  snapshot briefly moves the page's waterfall and then puts it back.
-- Transcripts, clips and waterfall images are saved in `data/`.
+- The live waterfall and Claude's snapshots share one spectrum view. When Claude
+  takes a snapshot, your waterfall jumps to that frequency and then returns.
+- The app saves transcripts, audio clips and waterfall images in `data/`.
 
 ## License
 
