@@ -51,15 +51,20 @@ function renderStatus(s) {
     $('meter').style.width = `${Math.max(0, Math.min(100, ((s.snrDb ?? 0) / 40) * 100))}%`;
     for (const b of $('modes').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.mode === s.mode));
     if (changed) { markCurrent(); drawAxis(); }
-    if (listening && s.sampleRate && ctx && ctx.sampleRate !== s.sampleRate) startAudio(s.sampleRate);
 }
 
 // ---------- audio ----------
 
-async function startAudio(rate) {
-    if (ctx) { try { await ctx.close(); } catch { /* closed */ } }
-    ctx = new AudioContext({ sampleRate: rate, latencyHint: 'playback' });
+// Called from the Listen tap: iOS only starts audio inside a user gesture, so
+// the context is created and resumed before anything is awaited, and never
+// rebuilt afterwards (the worklet resamples whatever rate the stream has).
+async function startAudio() {
+    // iOS: play as media, so the ring/silent switch does not mute it.
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    ctx = new AudioContext({ latencyHint: 'playback' });
+    const resumed = ctx.resume();
     await ctx.audioWorklet.addModule('/player-worklet.js');
+    await resumed;
     node = new AudioWorkletNode(ctx, 'radio-player', { outputChannelCount: [2] });
     node.port.postMessage({ gain });
     node.connect(ctx.destination);
@@ -69,20 +74,25 @@ function play(pcm) {
     if (!node) return;
     const f = new Float32Array(pcm.length);
     for (let i = 0; i < pcm.length; i++) f[i] = pcm[i] / 32768;
-    node.port.postMessage(f, [f.buffer]);
+    node.port.postMessage({ pcm: f, rate: state.sampleRate || 12000 }, [f.buffer]);
 }
 
 $('play').onclick = async () => {
     listening = !listening;
     $('play').textContent = listening ? 'Stop' : 'Listen';
     if (listening) {
-        await startAudio(state.sampleRate || 12000);
+        await startAudio();
         ws?.send(JSON.stringify({ type: 'listen', on: true }));
     } else {
         ws?.send(JSON.stringify({ type: 'listen', on: false }));
         if (ctx) { await ctx.close(); ctx = null; node = null; }
     }
 };
+
+// Phones suspend audio when the page is hidden; pick up again on return.
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && listening && ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
+});
 
 $('vol').oninput = (e) => {
     gain = (e.target.value / 100) ** 2;
