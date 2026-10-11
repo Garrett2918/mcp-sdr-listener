@@ -17,6 +17,7 @@ import { decodeCw } from './cw.js';
 import { SpectrumFeed, findSignals } from './spectrum.js';
 import { SpotFeed } from './spots.js';
 import { renderWaterfall } from './png.js';
+import { demodulate, AUDIO_RATE } from './dsp.js';
 import { PROVIDERS, DEFAULT_SETTINGS, DEFAULT_PROMPT, transcribe as transcribeWith, callModel, validChoice, maskKey } from './transcribe.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -33,7 +34,9 @@ fs.mkdirSync(CLIPS, { recursive: true });
 export const MODES = {
     am: [-5000, 5000], sam: [-5000, 5000], usb: [50, 2700], lsb: [-2700, -50],
     cwu: [-200, 200], cwl: [-200, 200], nfm: [-5000, 5000], fm: [-8000, 8000],
+    iq96: [-48000, 48000], // wideband raw IQ, used internally by sample()
 };
+const isWideIQ = (mode) => /^iq\d+$/.test(String(mode || ''));
 
 // ---------- persisted state ----------
 
@@ -170,6 +173,8 @@ class Radio extends EventEmitter {
             bandwidthLow: String(t.bandwidthLow), bandwidthHigh: String(t.bandwidthHigh),
             user_session_id: this.sessionId, format: 'pcm-zstd', version: '4',
         });
+        // Wide IQ keeps its preset's edges; the receiver ignores or refuses others.
+        if (isWideIQ(t.mode)) { q.delete('bandwidthLow'); q.delete('bandwidthHigh'); }
         const ws = new WebSocket(`wss://${SDR_HOST}/ws?${q}`);
         ws.binaryType = 'arraybuffer';
         this.ws = ws;
@@ -191,6 +196,8 @@ class Radio extends EventEmitter {
             if (!r) return;
             if (this.status !== 'live') this._set('live');
             this.signal = { power: r.signal.basebandPower, noise: r.signal.noisePower };
+            // Wideband IQ (used by sample) goes to its listeners, not the audio buffer.
+            if (r.channels === 2) { this.emit('iq', r.planes, r.sampleRate); return; }
             this._push(r.planes[0], r.sampleRate);
         };
         ws.onclose = () => {
@@ -236,7 +243,9 @@ class Radio extends EventEmitter {
         if (!(bandwidthLow < bandwidthHigh)) throw new Error('bandwidthLow must be below bandwidthHigh.');
         this.tuning = { frequency, mode, bandwidthLow, bandwidthHigh };
         saveState({ sessionId: this.sessionId, tuning: this.tuning });
-        this._send({ type: 'tune', ...this.tuning });
+        // The receiver rejects a whole retune into a wide IQ mode if it carries edges.
+        if (isWideIQ(mode)) this._send({ type: 'tune', frequency, mode });
+        else this._send({ type: 'tune', ...this.tuning });
         // Audio from before a retune belongs to a different signal.
         this.tuneMark = this.written;
         this.emit('status');
@@ -415,24 +424,137 @@ async function transcribe({ seconds = 30, when = 'past', language, prompt } = {}
     return transcribeClip(clip, tuning, radio.snapshot().snrDb, { language, prompt });
 }
 
-// Listen to several frequencies in turn, transcribing each clip while the next
-// one records, so judging a handful of stations takes about N x seconds.
-async function sample({ frequencies = [], seconds = 15, language } = {}) {
+// Judge several frequencies quickly:
+//   1. one spectrum snapshot skips frequencies with nothing on them;
+//   2. stations within IQ_CLUSTER_HZ of each other share one wideband IQ
+//      recording and are demodulated here, all at once;
+//   3. the rest are tuned one at a time.
+// Transcription runs in parallel with the recording. The original tuning is
+// restored at the end, since the receiver is shared with whoever is listening.
+const IQ_CLUSTER_HZ = 80000;
+const PRESCREEN_DB = 10;
+
+async function sample({ frequencies = [], seconds = 10, language, prescreen: screen = true } = {}) {
     if (!frequencies.length) throw new Error('Give at least one frequency.');
     if (frequencies.length > 12) throw new Error('At most 12 frequencies per call.');
-    seconds = Math.max(8, Math.min(60, Number(seconds) || 15));
-    const pending = [];
-    for (const f of frequencies) {
-        const khz = typeof f === 'number' ? f : f.khz;
-        radio.tune({ frequency: Math.round(khz * 1000), mode: (typeof f === 'object' && f.mode) || radio.tuning.mode });
-        const tuning = { ...radio.tuning };
-        const clip = await radio.next(seconds);
-        const snrDb = radio.snapshot().snrDb;
-        pending.push(transcribeClip(clip, tuning, snrDb, { language })
-            .then((e) => ({ frequencyKhz: khz, mode: tuning.mode, snrDb, language: e.language, text: e.text || '(no speech recognized)', english: e.english }))
-            .catch((err) => ({ frequencyKhz: khz, mode: tuning.mode, snrDb, error: err.message })));
+    seconds = Math.max(8, Math.min(60, Number(seconds) || 10));
+    const started = Date.now();
+    const original = { ...radio.tuning };
+    const items = frequencies.map((f, idx) => ({
+        idx, hz: Math.round((typeof f === 'number' ? f : f.khz) * 1000),
+        mode: (typeof f === 'object' && f.mode) || (original.mode === 'iq96' ? 'am' : original.mode),
+    }));
+    for (const it of items) if (!MODES[it.mode] || it.mode === 'iq96') throw new Error(`Unsupported mode "${it.mode}" for sampling.`);
+
+    // 1. Pre-screen from the spectrum.
+    const levels = screen ? await prescreen(items) : new Map();
+    const results = new Array(items.length);
+    const live = [];
+    for (const it of items) {
+        it.levelDb = levels.get(it.idx);
+        if (it.levelDb != null && it.levelDb < PRESCREEN_DB) {
+            results[it.idx] = { frequencyKhz: it.hz / 1000, mode: it.mode, levelDb: it.levelDb, skipped: 'no signal' };
+        } else live.push(it);
     }
-    return { secondsEach: seconds, results: await Promise.all(pending) };
+
+    // 2. Group what is left. Only AM and SSB can be demodulated from IQ here.
+    live.sort((a, b) => a.hz - b.hz);
+    const groups = [];
+    for (const it of live) {
+        const g = groups.at(-1);
+        const iqOk = ['am', 'sam', 'usb', 'lsb'].includes(it.mode);
+        if (g && g.iq && iqOk && it.hz - g.items[0].hz <= IQ_CLUSTER_HZ) g.items.push(it);
+        else groups.push({ iq: iqOk, items: [it] });
+    }
+
+    const pending = [];
+    const finish = (it, clip, snrDb, via) => {
+        pending.push(transcribeClip(clip, { frequency: it.hz, mode: it.mode }, snrDb, { language })
+            .then((e) => { results[it.idx] = { frequencyKhz: it.hz / 1000, mode: it.mode, levelDb: it.levelDb, via, language: e.language, text: e.text || '(no speech recognized)', english: e.english }; })
+            .catch((err) => { results[it.idx] = { frequencyKhz: it.hz / 1000, mode: it.mode, levelDb: it.levelDb, via, error: err.message }; }));
+    };
+
+    try {
+        for (const g of groups) {
+            if (g.iq && g.items.length > 1) {
+                // 3a. One IQ recording, every station in it demodulated locally.
+                const lo = g.items[0].hz, hi = g.items.at(-1).hz;
+                const center = Math.round((lo + hi) / 2);
+                const { i, q, rate } = await recordIq(center, seconds);
+                for (const it of g.items) finish(it, { pcm: demodulate(i, q, rate, it.hz - center, it.mode), sampleRate: AUDIO_RATE }, it.levelDb, 'iq');
+            } else {
+                // 3b. A lone station: tune to it normally.
+                for (const it of g.items) {
+                    radio.tune({ frequency: it.hz, mode: it.mode });
+                    const clip = await radio.next(seconds);
+                    finish(it, clip, radio.snapshot().snrDb, 'tuned');
+                }
+            }
+        }
+    } finally {
+        radio.tune(original);
+    }
+    await Promise.all(pending);
+    return {
+        seconds, totalSeconds: Math.round((Date.now() - started) / 1000),
+        note: 'levelDb is the signal peak above the noise floor from a pre-scan; frequencies under 10 dB were skipped.',
+        results,
+    };
+}
+
+// Peak level above the noise floor for each frequency, from short spectrum
+// snapshots (one per 4 MHz stretch). Returns Map idx -> dB, or no entry if the
+// snapshot failed (then the frequency is sampled anyway).
+async function prescreen(items) {
+    const out = new Map();
+    const sorted = [...items].sort((a, b) => a.hz - b.hz);
+    const spans = [];
+    for (const it of sorted) {
+        const s = spans.at(-1);
+        if (s && it.hz - s[0].hz <= 4e6) s.push(it); else spans.push([it]);
+    }
+    for (const s of spans) {
+        const lo = s[0].hz, hi = s.at(-1).hz;
+        try {
+            const cap = await spectrum.capture({ centerHz: (lo + hi) / 2, spanHz: Math.max(50000, hi - lo + 40000), seconds: 2 });
+            const n = cap.rows[0].length;
+            const avg = new Float32Array(n), peak = new Float32Array(n).fill(-300);
+            for (const r of cap.rows) for (let k = 0; k < n; k++) { avg[k] += r[k] / cap.rows.length; if (r[k] > peak[k]) peak[k] = r[k]; }
+            const floor = [...avg].sort((a, b) => a - b)[n >> 1];
+            for (const it of s) {
+                // Look across the station's own passband (AM ±5 kHz, SSB 0-3 kHz on its side).
+                const [bl, bh] = it.mode === 'usb' ? [0, 3000] : it.mode === 'lsb' ? [-3000, 0] : it.mode.startsWith('cw') ? [-500, 500] : [-5000, 5000];
+                const a = Math.max(0, Math.floor((it.hz + bl - cap.startHz) / cap.binHz));
+                const b = Math.min(n - 1, Math.ceil((it.hz + bh - cap.startHz) / cap.binHz));
+                let best = -300;
+                for (let k = a; k <= b; k++) best = Math.max(best, peak[k]);
+                if (b >= a) out.set(it.idx, +(best - floor).toFixed(1));
+            }
+        } catch (e) {
+            console.log(`prescreen failed: ${e.message}`);
+        }
+    }
+    return out;
+}
+
+// Record `seconds` of wideband IQ around `center` on the app's audio session.
+async function recordIq(center, seconds) {
+    radio.touch();
+    radio.tune({ frequency: center, mode: 'iq96', bandwidthLow: -48000, bandwidthHigh: 48000 });
+    const I = [], Q = [];
+    let rate = 0, have = 0, settle = 0;
+    await new Promise((resolve, reject) => {
+        const deadline = setTimeout(() => { radio.off('iq', onIq); have > 0 ? resolve() : reject(new Error('No IQ data arrived from the receiver.')); }, (seconds + 15) * 1000);
+        function onIq(planes, r) {
+            // Skip the first 0.3 s: frames still in flight from before the retune.
+            if (settle < r * 0.3) { settle += planes[0].length; return; }
+            rate = r; I.push(planes[0]); Q.push(planes[1]); have += planes[0].length;
+            if (have >= seconds * r) { clearTimeout(deadline); radio.off('iq', onIq); resolve(); }
+        }
+        radio.on('iq', onIq);
+    });
+    const cat = (parts) => { const o = new Float32Array(have); let p = 0; for (const x of parts) { o.set(x.subarray(0, Math.min(x.length, have - p)), p); p += x.length; if (p >= have) break; } return o; };
+    return { i: cat(I), q: cat(Q), rate };
 }
 
 // ---------- live captions ----------

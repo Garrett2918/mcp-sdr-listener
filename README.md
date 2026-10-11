@@ -69,7 +69,7 @@ The MCP server starts `server.js` itself if it isn't running. Tools:
 | `sdr_waterfall` | Waterfall image plus detected signals, for any span up to 30 MHz |
 | `sdr_scan` | Detected signals between two frequencies (any mode, including AM and CW) |
 | `sdr_transcribe`, `sdr_recent_transcripts` | Transcription (with language and English translation) and the transcript log |
-| `sdr_sample` | Listen to several frequencies in turn and transcribe each |
+| `sdr_sample` | Judge up to 12 frequencies at once: skips dead ones, records nearby stations together as wideband IQ, transcribes all |
 | `sdr_live` | Start, read and stop live captions |
 | `sdr_decode_cw` | Morse decoding of buffered or upcoming audio |
 | `sdr_spots` | FT8/FT4/WSPR stations this receiver decoded, or the worldwide DX cluster |
@@ -124,7 +124,9 @@ them if one fails.
   broadcasters, CW or data, use `sdr_scan` on a few hundred kHz at a time, or
   `sdr_waterfall` to see the band as an image.
 - **Judge several at once.** Pass up to 12 candidates to `sdr_sample`. It
-  records 15 seconds of each and transcribes them in parallel.
+  skips frequencies with no signal, records stations within 80 kHz of each
+  other in one wideband IQ capture, and transcribes everything in parallel.
+  It puts the user's tuning back afterwards.
 - **Follow one.** `sdr_live` with `action: "start"`, then `"read"` with the
   `latestSeq` from your last read as `since`. Call `"stop"` when you finish.
 - **After `sdr_tune`, transcribe with `when: "next"`.** The buffer only holds

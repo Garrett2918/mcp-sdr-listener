@@ -91,13 +91,14 @@ server.registerTool('sdr_recent_transcripts', {
 }, wrap(async (a) => api(`/api/transcripts?limit=${a.limit ?? 10}`)));
 
 server.registerTool('sdr_sample', {
-    description: 'Quickly judge several frequencies: tunes to each in turn, records `seconds` (default 15) of audio, and transcribes all clips in parallel while the next one records. Use it to survey candidates (e.g. from sdr_scan) and pick what to listen to. Each result includes the language and an English translation when needed. Leaves the receiver on the last frequency.',
+    description: 'Quickly judge several frequencies. A spectrum pre-scan skips ones with no signal (levelDb under 10); stations within 80 kHz of each other (AM, USB, LSB) are recorded together as one wideband IQ capture and demodulated at once; the rest are tuned one at a time. Every clip is transcribed in parallel, with language and English translation when the model supports it. Restores the original tuning afterwards. Speed depends on clustering: each 80 kHz group costs one `seconds`-long recording (12 frequencies spread over 2 MHz take about 70 s). Pass prescreen=false when the list comes straight from a fresh sdr_scan.',
     inputSchema: {
         frequencies: z.array(z.object({ khz: z.number(), mode: z.enum(['am', 'sam', 'usb', 'lsb', 'cwu', 'cwl', 'nfm', 'fm']).optional() })).min(1).max(12),
-        seconds: z.number().min(8).max(60).optional(),
+        seconds: z.number().min(8).max(60).optional().describe('Default 10'),
         language: z.string().optional(),
+        prescreen: z.boolean().optional().describe('Default true: skip frequencies with no signal first'),
     },
-}, wrap(async (a) => api('/api/sample', { frequencies: a.frequencies, seconds: a.seconds, language: a.language })));
+}, wrap(async (a) => api('/api/sample', { frequencies: a.frequencies, seconds: a.seconds, language: a.language, prescreen: a.prescreen })));
 
 server.registerTool('sdr_live', {
     description: 'Live captions on the current tuning: action="start" makes the server transcribe every chunk_seconds (default 15) of new audio until stopped or `minutes` (default 10) run out; action="read" returns caption chunks newer than `since` (pass the latestSeq from your last read); action="stop" ends it. Captions follow retunes and also appear on the user\'s page. Captions arrive roughly chunk_seconds + 5 s behind live. Cheap with Gemini, but stop it when done.',
