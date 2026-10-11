@@ -2,7 +2,8 @@
 // hosted transcription and Claude (through mcp.js).
 //
 // This file is the Node shell around app.js: it keeps state in data/ and API
-// keys in .env, serves the page, and only answers this computer.
+// keys in .env, serves the page, and only answers this computer, unless
+// PUBLIC_URL is set (see remote.js), when it also answers there behind a login.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -10,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { createApp } from './app.js';
+import { createRemote } from './remote.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 try { process.loadEnvFile(path.join(ROOT, '.env')); } catch { /* no .env */ }
@@ -65,6 +67,13 @@ const store = {
 const app = await createApp({ host: SDR_HOST, store });
 export const radio = app.radio;
 
+const PUBLIC_URL = process.env.PUBLIC_URL;
+if (PUBLIC_URL && !process.env.SDR_PASSWORD) {
+    console.error('PUBLIC_URL is set but SDR_PASSWORD is not; refusing to start without a login password.');
+    process.exit(1);
+}
+const remote = PUBLIC_URL ? createRemote({ publicUrl: PUBLIC_URL, password: process.env.SDR_PASSWORD, dataDir: DATA, app }) : null;
+
 // ---------- HTTP + browser stream ----------
 
 const STATIC = { '/': 'index.html', '/app.js': 'app.js', '/player-worklet.js': 'player-worklet.js', '/settings': 'settings.html', '/settings.js': 'settings.js' };
@@ -83,7 +92,10 @@ async function readJson(req) {
 
 // Only this machine's own pages and tools may use the API. The Host check stops
 // DNS-rebinding pages; the Origin check stops other sites posting to localhost.
+// With PUBLIC_URL, the public host name is accepted too, but every request then
+// needs a login (see below), whichever host it names.
 const LOCAL_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`]);
+if (remote) LOCAL_HOSTS.add(remote.host);
 function allowed(req) {
     if (!LOCAL_HOSTS.has(req.headers.host)) return false;
     const origin = req.headers.origin;
@@ -94,7 +106,15 @@ function allowed(req) {
 
 const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    if (remote && remote.handle(req, res)) return;
     if (!allowed(req)) return send(res, 403, { error: 'Requests are only accepted from this computer\'s SDR Listener page and tools.' });
+    if (remote && !remote.authorized(req)) {
+        if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/settings')) {
+            res.writeHead(303, { Location: `/login?next=${encodeURIComponent(url.pathname)}` });
+            return res.end();
+        }
+        return send(res, 401, { error: 'Log in first.' });
+    }
     if (STATIC[url.pathname]) {
         const f = path.join(ROOT, 'public', STATIC[url.pathname]);
         res.writeHead(200, { 'Content-Type': TYPES[path.extname(f)], 'Cache-Control': 'no-store' });
@@ -125,7 +145,7 @@ server.on('upgrade', (req, socket, head) => {
     const attach = pathname === '/stream' ? app.attachStream : pathname === '/spectrum' ? app.attachSpectrum : null;
     const origin = req.headers.origin;
     const local = LOCAL_HOSTS.has(req.headers.host) && (!origin || LOCAL_HOSTS.has(origin.replace(/^https?:\/\//, '')));
-    if (!attach || !local) { socket.destroy(); return; }
+    if (!attach || !local || (remote && !remote.authorized(req))) { socket.destroy(); return; }
     wss.handleUpgrade(req, socket, head, (ws) => attach(pageSocket(ws)));
 });
 
