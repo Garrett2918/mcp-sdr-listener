@@ -6,7 +6,7 @@ const BANDS = [
     ['17m', 18140000, 'usb'], ['15m', 21300000, 'usb'], ['12m', 24960000, 'usb'], ['10m', 28400000, 'usb'],
 ];
 
-// wss:// when the page itself came over HTTPS (the Cloudflare deployment).
+// wss:// when the page itself came over HTTPS (served publicly behind a proxy).
 const WS_BASE = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
 
 let state = { frequency: 3873000, mode: 'am', bandwidthLow: -5000, bandwidthHigh: 5000 };

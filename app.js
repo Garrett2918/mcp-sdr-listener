@@ -1,10 +1,9 @@
 // SDR Listener core: the receiver session, audio buffer, transcription, live
 // captions, spectrum tools and the HTTP API, with no ties to where it runs.
 //
-// server.js runs it under Node (files on disk, the `ws` package); the
-// Cloudflare Worker runs it in a Durable Object (SQLite storage). Each passes
-// in a `store` for persistence and, when needed, its own way of opening
-// sockets and fetching from the receiver.
+// server.js runs it under Node, passing in a `store` for persistence (files
+// on disk). A host can also pass its own way of opening sockets and fetching
+// from the receiver.
 //
 // One upstream audio session is shared by everything: the page, the REST API
 // and the MCP tools. It connects when someone is listening or a tool asks for
