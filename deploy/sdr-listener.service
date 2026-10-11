@@ -1,0 +1,39 @@
+# SDR Listener as a system service on a Linux server.
+# Install: copy the app to /opt/sdr-listener, create the user `sdr`, put
+# PUBLIC_URL, SDR_PASSWORD and API keys in /opt/sdr-listener/.env, then
+#   cp deploy/sdr-listener.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now sdr-listener
+# It listens on 127.0.0.1:8737 only; expose it with a reverse proxy or
+# `tailscale funnel --bg --https=8443 http://127.0.0.1:8737`.
+
+[Unit]
+Description=SDR Listener (UberSDR bridge and MCP server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sdr
+Group=sdr
+WorkingDirectory=/opt/sdr-listener
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+
+# The app writes only its data folder and .env (API keys from the Settings page).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ReadWritePaths=/opt/sdr-listener/data /opt/sdr-listener/.env
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
